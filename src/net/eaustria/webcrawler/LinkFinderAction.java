@@ -5,17 +5,14 @@
  */
 package net.eaustria.webcrawler;
 
-import java.net.URL;
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.RecursiveAction;
-import org.htmlparser.Parser;
-import org.htmlparser.filters.NodeClassFilter;
-import org.htmlparser.filters.TagNameFilter;
-import org.htmlparser.tags.LinkTag;
-import org.htmlparser.util.NodeList;
-import org.htmlparser.util.ParserException;
-import org.htmlparser.util.SimpleNodeIterator;
+import org.jsoup.Jsoup;
+import org.jsoup.nodes.Document;
+import org.jsoup.select.Elements;
+import org.jsoup.nodes.Element;
 
 /**
  *
@@ -28,44 +25,63 @@ public class LinkFinderAction extends RecursiveAction {
 
     private String url;
     private ILinkHandler cr;
+    private boolean distinctLinks;
+    private int numberOfUrlsToVisit;
+
     /**
      * Used for statistics
      */
-    private static final long t0 = System.nanoTime();
+    private long t0;
 
-    public LinkFinderAction(String url, ILinkHandler cr) {
+    public LinkFinderAction(String url, ILinkHandler cr, boolean distinctLinks, int numberOfUrlsToVisit, long startingTime) {
         this.url = url;
         this.cr = cr;
+        this.distinctLinks = distinctLinks;
+        this.numberOfUrlsToVisit = numberOfUrlsToVisit;
+        t0 = startingTime;
     }
 
     @Override
     public void compute() {
-        // 1. if crawler has not visited url yet:
-        if(!cr.visited(url)){
-            // 2. Create new list of recursiveActions
-            List<LinkFinderAction> lfa = new ArrayList<LinkFinderAction>();
-            // 3. Parse url
-            try {
-                Parser parser = new Parser(url);
-                // 4. extract all links from url
-                NodeList nodesThatMatch = parser.extractAllNodesThatMatch(new TagNameFilter("a"));
-                SimpleNodeIterator nodes = nodesThatMatch.elements();
-                // 5. add new Action for each sublink
-                while (nodes.hasMoreNodes()) {
-                    String link = ((LinkTag) nodes.nextNode()).getLink();
-                    lfa.add(new LinkFinderAction(link, cr));
+        if (!cr.isProcessStopping()) {
+            if (distinctLinks && cr.visited(url)) {
+                return;
+            } else {
+                Document document;
+                // 2. Create new list of recursiveActions
+                List<LinkFinderAction> lfa = new ArrayList<LinkFinderAction>();
+                // 3. Parse url
+                try {
+                    document = Jsoup.connect(url).get();
+                    // 4. extract all links from url
+                    Elements links = document.select("a[href]");
+                    // 5. add new Action for each sublink
+                    for (Element link : links) {
+                        //deletes all non http and https links
+                        if (link.absUrl("href").startsWith("http")) {
+                            lfa.add(new LinkFinderAction(link.absUrl("href"), cr, distinctLinks, numberOfUrlsToVisit, t0));
+                        }
+                    }
+                } catch (IOException e) {
+                    System.err.println("Coudn't acces website: " + e.getMessage());
                 }
-            } catch (ParserException e) {
-                throw new RuntimeException(e);
+                if(distinctLinks && !cr.visited(url)) {
+                    cr.addVisited(url);
+                }
+                if(!distinctLinks){
+                    cr.addVisited(url);
+                }
+                // 6. if size of crawler exceeds 500 -> print elapsed time for statistics
+                if (cr.size() == numberOfUrlsToVisit) {
+                    if (!cr.isProcessStopping()) {
+                        System.out.println((System.nanoTime() - t0) / 1000000 + "ms");
+                    }
+                    cr.stopCrawling();
+                    return;
+                }
+                // -> Do not forget to call ìnvokeAll on the actions!
+                invokeAll(lfa);
             }
-            cr.addVisited(url);
-            // 6. if size of crawler exceeds 500 -> print elapsed time for statistics
-            if (cr.size() > 500) {
-                System.out.println((System.nanoTime() - t0)/1000000000 + "s");
-            }
-            // -> Do not forget to call ìnvokeAll on the actions!
-            invokeAll(lfa);
         }
     }
 }
-

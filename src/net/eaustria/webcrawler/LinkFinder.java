@@ -9,32 +9,32 @@ package net.eaustria.webcrawler;
  *
  * @author bmayr
  */
-import java.net.URL;
 
-import org.htmlparser.Node;
-import org.htmlparser.Parser;
-import org.htmlparser.filters.NodeClassFilter;
-import org.htmlparser.filters.TagNameFilter;
-import org.htmlparser.tags.LinkTag;
-import org.htmlparser.util.NodeList;
-import org.htmlparser.util.ParserException;
-import org.htmlparser.util.SimpleNodeIterator;
+import org.jsoup.Jsoup;
+import org.jsoup.nodes.Document;
+import org.jsoup.nodes.Element;
+import org.jsoup.select.Elements;
 
-import java.util.ArrayList;
-import java.util.List;
+import java.io.IOException;
 
 public class LinkFinder implements Runnable {
 
     private String url;
     private ILinkHandler linkHandler;
+    private boolean distinctLinks;
+    private int numberOfUrlsToVisit;
+
     /**
      * Used fot statistics
      */
-    private static final long t0 = System.nanoTime();
+    private long t0;
 
-    public LinkFinder(String url, ILinkHandler handler) {
+    public LinkFinder(String url, ILinkHandler handler, boolean distinctLinks, int numberOfUrlsToVisit, long startingTime) {
         this.url = url;
         this.linkHandler = handler;
+        this.distinctLinks = distinctLinks;
+        this.numberOfUrlsToVisit = numberOfUrlsToVisit;
+        this.t0 = startingTime;
     }
 
     @Override
@@ -43,28 +43,48 @@ public class LinkFinder implements Runnable {
     }
 
     private void getSimpleLinks(String url) {
-        // 1. if url not already visited, visit url with linkHandler
-        if(!linkHandler.visited(url)) {
-            // 2. get url and Parse Website
-            try {
-                Parser parser = new Parser(url);
-                // 3. extract all URLs and add url to list of urls which should be visited
-                //    only if link is not empty and url has not been visited before
-                NodeList nodesThatMatch = parser.extractAllNodesThatMatch(new TagNameFilter("a"));
-                SimpleNodeIterator nodes = nodesThatMatch.elements();
-                while (nodes.hasMoreNodes()) {
-                    String link = ((LinkTag) nodes.nextNode()).getLink();
-                    if(!link.isEmpty() && !linkHandler.visited(link)) {
-                        linkHandler.queueLink(link);
+        if (!linkHandler.isProcessStopping()) {
+            if (distinctLinks && linkHandler.visited(url)) {
+                return;
+            }else {
+                Document document;
+                // 1. if url not already visited, visit url with linkHandler
+                if (!linkHandler.visited(url)) {
+                    // 2. get url and Parse Website
+                    try {
+                        document = Jsoup.connect(url).get();
+                        // 3. extract all URLs and add url to list of urls which should be visited
+                        //    only if link is not empty and url has not been visited before
+                        Elements links = document.select("a[href]");
+                        // 5. add new Action for each sublink
+                        for (Element link : links) {
+                            if (!link.attr("href").isEmpty() && !linkHandler.visited(link.attr("href"))) {
+                                if (link.absUrl("href").startsWith("http")) {
+                                    linkHandler.queueLink(link.absUrl("href"), linkHandler, distinctLinks, numberOfUrlsToVisit, t0);
+                                }
+                            }
+                        }
+                        if(distinctLinks && !linkHandler.visited(url)) {
+                            linkHandler.addVisited(url);
+                        }
+                        if(!distinctLinks){
+                            linkHandler.addVisited(url);
+                        }
+                        // 4. If size of link handler equals 500 -> print time elapsed for statistics
+                        if (linkHandler.size() == numberOfUrlsToVisit) {
+                            if (!linkHandler.isProcessStopping()) {
+                                System.out.println((System.nanoTime() - t0) / 1000000 + "ms");
+                            }
+                            linkHandler.stopCrawling();
+                            return;
+                        }
+                    } catch (IOException e) {
+                        System.err.println("Coudn't acces website: " + e.getMessage());
+                        linkHandler.addVisited(url);
+                    } catch (Exception e) {
+                        throw new RuntimeException(e);
                     }
                 }
-                linkHandler.addVisited(url);
-                // 4. If size of link handler equals 500 -> print time elapsed for statistics
-                if (linkHandler.size() == 500) {
-                    System.out.println((System.nanoTime() - t0)/1000000000 + "s");
-                }
-            } catch (Exception e) {
-
             }
         }
     }

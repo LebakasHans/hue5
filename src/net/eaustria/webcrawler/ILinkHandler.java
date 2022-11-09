@@ -20,7 +20,7 @@ public interface ILinkHandler {
      * @param link
      * @throws Exception 
      */
-    void queueLink(String link) throws Exception;
+    void queueLink(String link, ILinkHandler linkHandler,boolean distinctLinks, int numberOfUrlsToVisit, long startingTime) throws Exception;
 
     /**
      * Returns the number of visited links
@@ -40,4 +40,8 @@ public interface ILinkHandler {
      * @param link 
      */
     void addVisited(String link);
+
+    void stopCrawling();
+
+    boolean isProcessStopping();
 }
