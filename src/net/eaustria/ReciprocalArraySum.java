@@ -1,4 +1,4 @@
-package net.htlgkr.hue5.beispiel1;
+package net.eaustria;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -49,7 +49,7 @@ public class ReciprocalArraySum {
          * Input array to reciprocal sum.
          */
         private final double[] input;
-        private static int SEQUENTIAL_THRESHOLD = 4;
+        private static int SEQUENTIAL_THRESHOLD = 3;
 
         /**
          * Constructor.
@@ -73,7 +73,7 @@ public class ReciprocalArraySum {
                 ReciprocalArraySumTask left = null;
                 ReciprocalArraySumTask right = null;
                 var arr = Arrays.copyOfRange(input, startIndexInclusive, endIndexExclusive);
-                if (arr.length < SEQUENTIAL_THRESHOLD) {
+                if (arr.length > SEQUENTIAL_THRESHOLD) {
                     left = new ReciprocalArraySumTask(startIndexInclusive, endIndexExclusive - (endIndexExclusive - startIndexInclusive) / 2, input);
                     right = new ReciprocalArraySumTask(endIndexExclusive - (endIndexExclusive - startIndexInclusive) / 2, endIndexExclusive, input);
 
@@ -96,7 +96,7 @@ public class ReciprocalArraySum {
     protected static double parManyTaskArraySum(final double[] input,
                                                 final int numTasks) {
         ForkJoinPool forkJoinPool = new ForkJoinPool(numTasks);
-        double sum = forkJoinPool.invoke(new ReciprocalArraySumTask(0, input.length-1, input));
+        double sum = forkJoinPool.invoke(new ReciprocalArraySumTask(0, input.length, input));
         return sum;
     }
 }
